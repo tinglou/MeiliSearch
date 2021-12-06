@@ -13,13 +13,14 @@ pub use task_store::{Pending, TaskFilter};
 
 use batch::Batch;
 use error::Result;
-use scheduler::Scheduler;
+use update_loop::UpdateLoop;
 
 pub mod batch;
 pub mod error;
-pub mod scheduler;
 pub mod task;
+mod task_queue;
 mod task_store;
+pub mod update_loop;
 
 #[cfg_attr(test, mockall::automock(type Error=test::DebugError;))]
 #[async_trait]
@@ -37,7 +38,7 @@ where
     P: TaskPerformer,
 {
     let task_store = TaskStore::new(env)?;
-    let scheduler = Scheduler::new(task_store.clone(), performer, Duration::from_millis(1));
+    let scheduler = UpdateLoop::new(task_store.clone(), performer, Duration::from_millis(1));
     tokio::task::spawn_local(scheduler.run());
     Ok(task_store)
 }
