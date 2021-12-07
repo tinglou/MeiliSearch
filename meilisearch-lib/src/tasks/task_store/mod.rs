@@ -207,6 +207,30 @@ impl TaskStore {
         }
     }
 
+    pub async fn get_pending_tasks(
+        &self,
+        ids: Vec<TaskId>,
+    ) -> Result<(Vec<TaskId>, Vec<Pending<Task>>)> {
+        let store = self.store.clone();
+        let tasks = tokio::task::spawn_blocking(move || -> Result<_> {
+            let mut tasks = Vec::new();
+            let txn = store.rtxn()?;
+
+            for id in ids.iter() {
+                let task = Pending::Task(
+                    store
+                        .get(&txn, *id)?
+                        .ok_or(TaskError::UnexistingTask(*id))?,
+                );
+                tasks.push(task);
+            }
+            Ok((ids, tasks))
+        })
+        .await??;
+
+        Ok(tasks)
+    }
+
     pub async fn update_tasks(&self, tasks: Vec<Pending<Task>>) -> Result<Vec<Pending<Task>>> {
         let store = self.store.clone();
 
