@@ -17,8 +17,8 @@ use update_loop::UpdateLoop;
 
 pub mod batch;
 pub mod error;
+mod scheduler;
 pub mod task;
-mod task_queue;
 mod task_store;
 pub mod update_loop;
 
