@@ -2,7 +2,7 @@ pub mod error;
 pub mod index_store;
 pub mod meta_store;
 
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 use std::path::Path;
 
 use chrono::Utc;
@@ -11,12 +11,11 @@ use heed::Env;
 use index_store::{IndexStore, MapIndexStore};
 use meilisearch_error::ResponseError;
 use meta_store::{HeedMetaStore, IndexMetaStore};
-use milli::update::DocumentDeletionResult;
+use milli::update::{DocumentDeletionResult, IndexerConfig};
 use serde::{Deserialize, Serialize};
 use tokio::task::spawn_blocking;
 use uuid::Uuid;
 
-use crate::index::update_handler::UpdateHandler;
 use crate::index::{error::Result as IndexResult, Index};
 use crate::options::IndexerOpts;
 use crate::tasks::batch::Batch;
@@ -159,9 +158,9 @@ impl IndexResolver<HeedMetaStore, MapIndexStore> {
         HeedMetaStore::load_dump(&src, env)?;
         let indexes_path = src.as_ref().join("indexes");
         let indexes = indexes_path.read_dir()?;
-        let update_handler = UpdateHandler::new(indexer_opts)?;
+        let indexer_config = IndexerConfig::try_from(indexer_opts)?;
         for index in indexes {
-            Index::load_dump(&index?.path(), &dst, index_db_size, &update_handler)?;
+            Index::load_dump(&index?.path(), &dst, index_db_size, &indexer_config)?;
         }
 
         Ok(())

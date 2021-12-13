@@ -4,7 +4,6 @@ pub use updates::{apply_settings_to_builder, Checked, Facets, Settings, Unchecke
 mod dump;
 pub mod error;
 mod search;
-pub mod update_handler;
 pub mod updates;
 
 #[allow(clippy::module_inception)]
@@ -26,6 +25,7 @@ pub mod test {
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    use milli::update::IndexerConfig;
     use milli::update::{DocumentAdditionResult, DocumentDeletionResult, IndexDocumentsMethod};
     use nelson::Mocker;
     use serde_json::{Map, Value};
@@ -62,7 +62,7 @@ pub mod test {
             src: impl AsRef<Path>,
             dst: impl AsRef<Path>,
             size: usize,
-            update_handler: &UpdateHandler,
+            update_handler: &IndexerConfig,
         ) -> anyhow::Result<()> {
             Index::load_dump(src, dst, size, update_handler)
         }

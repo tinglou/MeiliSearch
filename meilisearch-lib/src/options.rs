@@ -1,8 +1,8 @@
 use core::fmt;
-use std::{ops::Deref, str::FromStr};
+use std::{convert::TryFrom, ops::Deref, str::FromStr};
 
 use byte_unit::{Byte, ByteError};
-use milli::CompressionType;
+use milli::{update::IndexerConfig, CompressionType};
 use structopt::StructOpt;
 use sysinfo::{RefreshKind, System, SystemExt};
 
@@ -41,6 +41,27 @@ pub struct IndexerOpts {
     /// Number of parallel jobs for indexing, defaults to # of CPUs.
     #[structopt(long)]
     pub indexing_jobs: Option<usize>,
+}
+
+impl TryFrom<&IndexerOpts> for IndexerConfig {
+    type Error = anyhow::Error;
+
+    fn try_from(other: &IndexerOpts) -> Result<Self, Self::Error> {
+        let thread_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(other.indexing_jobs.unwrap_or(num_cpus::get() / 2))
+            .build()?;
+
+        Ok(Self {
+            log_every_n: Some(other.log_every_n),
+            max_nb_chunks: other.max_nb_chunks,
+            max_memory: (*other.max_memory).map(|b| b.get_bytes() as usize),
+            chunk_compression_type: other.chunk_compression_type,
+            chunk_compression_level: other.chunk_compression_level,
+            thread_pool: Some(thread_pool),
+            max_positions_per_attributes: None,
+            ..Default::default()
+        })
+    }
 }
 
 impl Default for IndexerOpts {

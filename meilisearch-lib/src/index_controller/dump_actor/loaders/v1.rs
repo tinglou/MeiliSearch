@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::TryFrom;
 use std::fs::{create_dir_all, File};
 use std::io::{BufReader, Seek, SeekFrom};
 use std::marker::PhantomData;
@@ -7,13 +8,12 @@ use std::path::Path;
 use heed::EnvOpenOptions;
 use log::{error, warn};
 use milli::documents::DocumentBatchReader;
-use milli::update::Setting;
+use milli::update::{IndexDocumentsConfig, IndexerConfig, Setting};
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 
 use crate::document_formats::read_ndjson;
 use crate::index::apply_settings_to_builder;
-use crate::index::update_handler::UpdateHandler;
 use crate::index_controller::dump_actor::compat;
 use crate::index_controller::{self, IndexMetadata};
 use crate::{index::Unchecked, options::IndexerOpts};
@@ -104,24 +104,22 @@ fn load_index(
     options.map_size(size);
     let index = milli::Index::new(options, index_path)?;
 
-    let update_handler = UpdateHandler::new(indexer_options)?;
+    let indexer_config = IndexerConfig::try_from(indexer_options)?;
 
     let mut txn = index.write_txn()?;
     // extract `settings.json` file and import content
     let settings = import_settings(&src)?;
     let settings: index_controller::Settings<Unchecked> = settings.into();
 
-    let handler = UpdateHandler::new(indexer_options)?;
-
-    let mut builder = handler.update_builder().settings(&mut txn, &index);
+    let mut settings_builder = milli::update::Settings::new(&mut txn, &index, &indexer_config);
 
     if let Some(primary_key) = primary_key {
-        builder.set_primary_key(primary_key.to_string());
+        settings_builder.set_primary_key(primary_key.to_string());
     }
 
-    apply_settings_to_builder(&settings.check(), &mut builder);
+    apply_settings_to_builder(&settings.check(), &mut settings_builder);
 
-    builder.execute(|_| ())?;
+    settings_builder.execute(|_| ())?;
 
     let reader = BufReader::new(File::open(&src.as_ref().join("documents.jsonl"))?);
 
@@ -136,10 +134,11 @@ fn load_index(
     //If the document file is empty, we don't perform the document addition, to prevent
     //a primary key error to be thrown.
     if !documents_reader.is_empty() {
-        let builder = update_handler
-            .update_builder()
-            .index_documents(&mut txn, &index);
-        builder.execute(documents_reader, |_| ())?;
+        let config = IndexDocumentsConfig::default();
+        let mut documents_builder =
+            milli::update::IndexDocuments::new(&mut txn, &index, &indexer_config, config, |_| ());
+        documents_builder.add_documents(documents_reader)?;
+        documents_builder.execute()?;
     }
 
     txn.commit()?;
