@@ -653,7 +653,7 @@ fn parse_filter(facets: &Value) -> Result<Option<Filter>> {
     match facets {
         Value::String(expr) => {
             let condition = Filter::from_str(expr)?;
-            Ok(Some(condition))
+            Ok(condition)
         }
         Value::Array(arr) => parse_filter_array(arr),
         v => Err(FacetError::InvalidExpression(&["Array"], v.clone()).into()),

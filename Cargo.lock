@@ -942,7 +942,7 @@ dependencies = [
 [[package]]
 name = "filter-parser"
 version = "0.1.0"
-source = "git+https://github.com/meilisearch/milli.git?tag=v0.21.0#c83b77304a3062bdbb5b2a3503a710711caebdea"
+source = "git+https://github.com/meilisearch/milli.git?branch=fix_geo_search#98a365aaae53e2d543f65f5261811a23dad65660"
 dependencies = [
  "nom",
  "nom_locate",
@@ -1651,7 +1651,7 @@ dependencies = [
 
 [[package]]
 name = "meilisearch-http"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "actix-cors",
  "actix-rt",
@@ -1825,7 +1825,7 @@ dependencies = [
 [[package]]
 name = "milli"
 version = "0.21.0"
-source = "git+https://github.com/meilisearch/milli.git?tag=v0.21.0#c83b77304a3062bdbb5b2a3503a710711caebdea"
+source = "git+https://github.com/meilisearch/milli.git?branch=fix_geo_search#98a365aaae53e2d543f65f5261811a23dad65660"
 dependencies = [
  "bimap",
  "bincode",
