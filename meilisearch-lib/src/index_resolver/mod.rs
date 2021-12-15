@@ -99,35 +99,48 @@ where
     type Error = ResponseError;
 
     async fn process(&self, mut batch: Batch) -> Batch {
-        // Until batching is implemented, all batch should contain only one update.
-        debug_assert_eq!(batch.len(), 1);
+        // If a batch contains multiple tasks, then it must be a document addition batch
+        if let Some(Pending::Task(Task {
+            content: TaskContent::DocumentAddition { .. },
+            ..
+        })) = batch.tasks.first()
+        {
+            debug_assert!(batch.tasks.iter().all(|t| matches!(
+                t,
+                Pending::Task(Task {
+                    content: TaskContent::DocumentAddition { .. },
+                    ..
+                })
+            )));
 
-        match batch.tasks.first_mut() {
-            Some(Pending::Task(task)) => {
-                task.events.push(TaskEvent::Processing(Utc::now()));
+            self.process_document_addition_batch(batch).await
+        } else {
+            match batch.tasks.first_mut() {
+                Some(Pending::Task(task)) => {
+                    task.events.push(TaskEvent::Processing(Utc::now()));
 
-                match self.process_task(task).await {
-                    Ok(success) => {
-                        task.events.push(TaskEvent::Succeded {
-                            result: success,
+                    match self.process_task(task).await {
+                        Ok(success) => {
+                            task.events.push(TaskEvent::Succeded {
+                                result: success,
+                                timestamp: Utc::now(),
+                            });
+                        }
+                        Err(err) => task.events.push(TaskEvent::Failed {
+                            error: err.into(),
                             timestamp: Utc::now(),
-                        });
+                        }),
                     }
-                    Err(err) => task.events.push(TaskEvent::Failed {
-                        error: err.into(),
-                        timestamp: Utc::now(),
-                    }),
                 }
-            }
-            Some(Pending::Job(job)) => {
-                let job = std::mem::take(job);
-                self.process_job(job).await;
-            }
+                Some(Pending::Job(job)) => {
+                    let job = std::mem::take(job);
+                    self.process_job(job).await;
+                }
 
-            None => (),
+                None => (),
+            }
+            batch
         }
-
-        batch
     }
 
     async fn finish(&self, batch: &Batch) {
@@ -180,6 +193,83 @@ where
         }
     }
 
+    async fn process_document_addition_batch(&self, mut batch: Batch) -> Batch {
+        fn get_content_uuid(task: &Pending<Task>) -> Uuid {
+            match task {
+                Pending::Task(Task {
+                    content: TaskContent::DocumentAddition { content_uuid, .. },
+                    ..
+                }) => *content_uuid,
+                _ => panic!("unexpected task in the document addition batch"),
+            }
+        }
+
+        let content_uuids = batch.tasks.iter().map(get_content_uuid).collect::<Vec<_>>();
+
+        match batch.tasks.first() {
+            Some(Pending::Task(Task {
+                index_uid,
+                id,
+                content:
+                    TaskContent::DocumentAddition {
+                        content_uuid,
+                        merge_strategy,
+                        primary_key,
+                        ..
+                    },
+                ..
+            })) => {
+                let primary_key = primary_key.clone();
+                let content_uuid = *content_uuid;
+                let method = *merge_strategy;
+
+                let index = self
+                    .get_or_create_index(index_uid.clone(), *id)
+                    .await
+                    .unwrap();
+                let file_store = self.file_store.clone();
+                let result = spawn_blocking(move || {
+                    index.update_documents(
+                        method,
+                        primary_key,
+                        file_store,
+                        content_uuids.into_iter(),
+                    )
+                })
+                .await;
+
+                let event = match result {
+                    Ok(Ok(result)) => TaskEvent::Succeded {
+                        timestamp: Utc::now(),
+                        result: TaskResult::DocumentAddition {
+                            indexed_documents: result.indexed_documents,
+                        },
+                    },
+                    Ok(Err(e)) => TaskEvent::Failed {
+                        timestamp: Utc::now(),
+                        error: e.into(),
+                    },
+                    Err(e) => TaskEvent::Failed {
+                        timestamp: Utc::now(),
+                        error: IndexResolverError::from(e).into(),
+                    },
+                };
+
+                for task in batch.tasks.iter_mut() {
+                    match task {
+                        Pending::Task(Task { ref mut events, .. }) => {
+                            events.push(event.clone());
+                        }
+                        _ => panic!("unexpected task"),
+                    }
+                }
+
+                batch
+            }
+            _ => panic!("invalid batch!"),
+        }
+    }
+
     async fn process_task(&self, task: &Task) -> Result<TaskResult> {
         let index_uid = task.index_uid.clone();
         match &task.content {
@@ -188,20 +278,7 @@ where
                 merge_strategy,
                 primary_key,
                 ..
-            } => {
-                let primary_key = primary_key.clone();
-                let content_uuid = *content_uuid;
-                let method = *merge_strategy;
-
-                let index = self.get_or_create_index(index_uid, task.id).await?;
-                let file_store = self.file_store.clone();
-                let result = spawn_blocking(move || {
-                    index.update_documents(method, content_uuid, primary_key, file_store)
-                })
-                .await??;
-
-                Ok(result.into())
-            }
+            } => panic!("updates should be handled by batch"),
             TaskContent::DocumentDeletion(DocumentDeletion::Ids(ids)) => {
                 let ids = ids.clone();
                 let index = self.get_index(index_uid.into_inner()).await?;

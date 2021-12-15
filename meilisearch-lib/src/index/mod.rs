@@ -157,21 +157,18 @@ pub mod test {
         pub fn update_documents(
             &self,
             method: IndexDocumentsMethod,
-            content_uuid: Uuid,
             primary_key: Option<String>,
             file_store: UpdateFileStore,
+            contents: impl Iterator<Item = Uuid>,
         ) -> Result<DocumentAdditionResult> {
             match self {
                 MockIndex::Real(index) => {
-                    index.update_documents(method, content_uuid, primary_key, file_store)
+                    index.update_documents(method, primary_key, file_store, contents)
                 }
                 MockIndex::Mock(mocker) => unsafe {
-                    mocker.get("update_documents").call((
-                        method,
-                        content_uuid,
-                        primary_key,
-                        file_store,
-                    ))
+                    mocker
+                        .get("update_documents")
+                        .call((method, primary_key, file_store, contents))
                 },
             }
         }

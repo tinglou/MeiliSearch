@@ -223,9 +223,9 @@ impl Index {
     pub fn update_documents(
         &self,
         method: IndexDocumentsMethod,
-        content_uuid: Uuid,
         primary_key: Option<String>,
         file_store: UpdateFileStore,
+        contents: impl IntoIterator<Item = Uuid>,
     ) -> Result<DocumentAdditionResult> {
         trace!("performing document addition");
         let mut txn = self.write_txn()?;
@@ -234,16 +234,12 @@ impl Index {
             self.update_primary_key_txn(&mut txn, primary_key)?;
         }
 
-        let indexing_callback = |indexing_step| debug!("update: {:?}", indexing_step);
-
-        let content_file = file_store.get_update(content_uuid).unwrap();
-        let reader = DocumentBatchReader::from_reader(content_file).unwrap();
-
         let config = IndexDocumentsConfig {
             update_method: method,
             ..Default::default()
         };
 
+        let indexing_callback = |indexing_step| debug!("update: {:?}", indexing_step);
         let mut builder = milli::update::IndexDocuments::new(
             &mut txn,
             self,
@@ -252,7 +248,11 @@ impl Index {
             indexing_callback,
         );
 
-        builder.add_documents(reader)?;
+        for content_uuid in contents.into_iter() {
+            let content_file = file_store.get_update(content_uuid).unwrap();
+            let reader = DocumentBatchReader::from_reader(content_file).unwrap();
+            builder.add_documents(reader)?;
+        }
 
         let addition = builder.execute()?;
 
